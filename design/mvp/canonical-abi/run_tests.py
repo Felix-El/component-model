@@ -148,16 +148,7 @@ test(RecordType([FieldType('x',U8Type()),
      [1,2,3],
      {'x':1,'y':2,'z':3})
 test(TupleType([TupleType([U8Type(),U8Type()]),U8Type()]), [1,2,3], {'0':{'0':1,'1':2},'1':3})
-test(ListType(U8Type(),3), [1,2,3], [1,2,3])
-test(ListType(ListType(U8Type(),2),3), [1,2,3,4,5,6], [[1,2],[3,4],[5,6]])
-# bounded (variable-length up to max) list tests
-test(ListType(U8Type(),3,True), [3, 1,2,3], [1,2,3])
-test(ListType(U8Type(),3,True), [2, 1,2,0], [1,2])
-test(ListType(U8Type(),3,True), [0, 0,0,0], [])
-test(ListType(U32Type(),2,True), [2, 10,20], [10,20])
-test(ListType(U32Type(),2,True), [1, 10,0], [10])
-# actual_len > max_len must trap (flat)
-test(ListType(U8Type(),3,True), [4, 1,2,3], None)
+
 # Empty flags types are not permitted yet.
 #t = FlagsType([])
 #test(t, [], {})
@@ -294,6 +285,16 @@ def test_heap(t, expect, args, byte_array, addr_type='i32'):
   heap = Heap(byte_array)
   cx = mk_cx(MemInst(heap.memory, addr_type))
   test(t, args, expect, cx)
+
+# fixed and bounded flat list tests (ptr-based)
+test_heap(ListType(U8Type(),3), [1,2,3], [0], [1,2,3])
+test_heap(ListType(ListType(U8Type(),2),3), [[1,2],[3,4],[5,6]], [0], [1,2,3,4,5,6])
+test_heap(ListType(U8Type(),3,True), [1,2,3], [0, 3], [1,2,3])
+test_heap(ListType(U8Type(),3,True), [1,2], [0, 2], [1,2])
+test_heap(ListType(U8Type(),3,True), [], [0, 0], [])
+test_heap(ListType(U32Type(),2,True), [10,20], [0, 2], [10,0,0,0, 20,0,0,0])
+test_heap(ListType(U32Type(),2,True), [10], [0, 1], [10,0,0,0])
+test_heap(ListType(U8Type(),3,True), None, [0, 4], [1,2,3])
 
 # Empty record types are not permitted yet.
 #test_heap(ListType(RecordType([])), [{},{},{}], [0,3], [])
@@ -481,6 +482,16 @@ def test_roundtrips():
                                            U32Type(),U32Type(),U32Type(),U32Type(),
                                            StringType()]))]),
                   {'x': mk_tup(1,2,3,4, 5,6,7,8, 9,10,11,12, 13,14,15,16, mk_str("wat"))}),
+    # fixed-length list roundtrips
+    (ListType(U8Type(),3), [1,2,3]),
+    (ListType(ListType(U8Type(),2),3), [[1,2],[3,4],[5,6]]),
+    (ListType(TupleType([U16Type(),U16Type()]),2), [mk_tup(3,4), mk_tup(5,6)]),
+    # bounded-length list roundtrips
+    (ListType(U8Type(),3,True), [1,2,3]),
+    (ListType(U8Type(),3,True), [1,2]),
+    (ListType(U8Type(),3,True), []),
+    (ListType(U32Type(),2,True), [10,20]),
+    (ListType(ListType(U8Type(),3,True),2), [[1,2],[3]]),
   ]
   for addr_type in ['i32', 'i64']:
     for t, v in cases:

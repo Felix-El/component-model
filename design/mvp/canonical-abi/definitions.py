@@ -1906,9 +1906,7 @@ def flatten_type(t, opts):
 
 def flatten_list(elem_type, maybe_length, maybe_variable, opts):
   if maybe_length is not None:
-    if maybe_variable:
-      return flatten_type(varint_type(maybe_length), opts) + flatten_type(elem_type, opts) * maybe_length
-    return flatten_type(elem_type, opts) * maybe_length
+    return [opts.memory.ptr_type()] if not maybe_variable else [opts.memory.ptr_type(), opts.memory.ptr_type()]
   return [opts.memory.ptr_type(), opts.memory.ptr_type()]
 
 def flatten_record(fields, opts):
@@ -2002,20 +2000,13 @@ def lift_flat_string(cx, vi):
 
 def lift_flat_list(cx, vi, elem_type, maybe_length, maybe_variable):
   if maybe_length is not None:
+    ptr = vi.next(cx.opts.memory.ptr_type())
     if maybe_variable:
-      lentype = varint_type(maybe_length)
-      actual_len = lift_flat(cx, vi, lentype)
+      actual_len = vi.next(cx.opts.memory.ptr_type())
       trap_if(actual_len > maybe_length)
     else:
       actual_len = maybe_length
-    a = []
-    for i in range(actual_len):
-      a.append(lift_flat(cx, vi, elem_type))
-    if maybe_variable:
-      for i in range(maybe_length - actual_len):
-        for ft in flatten_type(elem_type, cx.opts):
-          vi.next(ft)
-    return a
+    return load_list_from_range(cx, ptr, actual_len, elem_type)
   ptr = vi.next(cx.opts.memory.ptr_type())
   length = vi.next(cx.opts.memory.ptr_type())
   return load_list_from_range(cx, ptr, length, elem_type)
@@ -2097,19 +2088,18 @@ def lower_flat_string(cx, v):
 
 def lower_flat_list(cx, v, elem_type, maybe_length, maybe_variable):
   if maybe_length is not None:
-    flat = []
     if maybe_variable:
       assert(len(v) <= maybe_length)
-      flat += lower_flat(cx, len(v), varint_type(maybe_length))
     else:
       assert(maybe_length == len(v))
-    for e in v:
-      flat += lower_flat(cx, e, elem_type)
+    byte_length = len(v) * elem_size(elem_type, cx.opts.memory.ptr_type())
+    ptr = cx.opts.realloc(0, 0, alignment(elem_type, cx.opts.memory.ptr_type()), byte_length)
+    trap_if(ptr != align_to(ptr, alignment(elem_type, cx.opts.memory.ptr_type())))
+    trap_if(ptr + byte_length > len(cx.opts.memory))
+    store_list_into_valid_range(cx, v, ptr, elem_type)
     if maybe_variable:
-      for _ in range(maybe_length - len(v)):
-        for _ in flatten_type(elem_type, cx.opts):
-          flat.append(0)
-    return flat
+      return [ptr, len(v)]
+    return [ptr]
   else:
     (ptr, length) = store_list_into_range(cx, v, elem_type, None)
     return [ptr, length]
